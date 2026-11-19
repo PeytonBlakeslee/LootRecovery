@@ -31,7 +31,7 @@ The SDK Mods menu groups options as follows:
 | **Consumables & Currency** | Ammo, Money and Currencies, Health and Consumables | All On |
 | **Keybinds** | Gather All Loot | Enter |
 
-**Include Container Gear** controls equipment from opened containers, not ammo, cash, currencies, or consumables. Those resource types follow their own category settings and can still be eligible after containers open. **Exclude My Dropped Gear** is opt-in; it does not exclude your own dropped equipment unless enabled. Reset to Defaults also restores the Enter keybind.
+**Include Container Gear** only gates equipment while it remains attached to its container or source. Gear that is no longer attached may still be eligible because container origin is not tracked. Ammo, cash, currencies, and consumables use their own category settings and may be eligible regardless of attachment. **Exclude My Dropped Gear** is opt-in; it does not exclude your own dropped equipment unless enabled. Reset to Defaults also restores the Enter keybind.
 
 ## Safety and limitations
 

@@ -1,4 +1,4 @@
-# Loot Recovery 1.0.0-beta.5
+# Loot Recovery 1.0.0
 
 Moves eligible, already-spawned loot from across the current Borderlands 2 map near your character. It does not create items, open containers, or automatically pick items up.
 
@@ -18,7 +18,7 @@ Press **Gather All Loot** (default **Enter**) to bring eligible items into a sem
 - **Equipment:** All equipment categories On; minimum rarity Any. **Include Container Gear** and **Exclude My Dropped Gear** default to Off.
 - **Consumables & Currency:** Ammo, money/currencies, and supported consumables On.
 
-The gear-container option does not disable collection of ordinary resources from opened containers.
+**Include Container Gear** controls equipment while it is still attached to its source, not all gear originally spawned by containers. Once detached, gear may be eligible even with the option Off. Ordinary resources use their own category filters regardless of attachment.
 
 ## Safety and compatibility
 

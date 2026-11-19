@@ -1,4 +1,4 @@
-"""Loot Recovery v1.0 Beta (update 4): manual map-wide recovery of BL2's ordinary spawned pickups.
+"""Loot Recovery: manual, host-authoritative recovery of eligible spawned pickups.
 
 This module does not collect, clone, destroy or create inventory. All native movement
 operations run on the owning world (solo/listen host) and must be validated in-game.
@@ -20,7 +20,7 @@ from mods_base import (
     Game, GroupedOption, KeybindOption, KeybindType, SpinnerOption, build_mod, get_pc,
 )
 
-__version__ = "1.0.0-beta.5"
+__version__ = "1.0.0"
 __author__ = "Peyton"
 
 PREFIX = "[LootRecovery] "
@@ -31,8 +31,8 @@ BATCH_PER_TICK = 2
 SLOTS_PER_ARC = 9
 DISTANCE_FIRST = 155.0
 DISTANCE_STEP = 62.0
-# Pilot build: verify actor relocation + stock pickup physics before
-# reintroducing any geometry rejection. The old 8 traces rejected every slot.
+# Placement does not verify ground support, obstacle clearance, or pickup reachability.
+# The earlier eight-trace approach rejected every slot; do not restore blindly.
 HEIGHT_ABOVE_PLAYER = 40.0
 MAX_TEST_DISTANCE = 5500.0
 RESET_COOLDOWN = 0.5
@@ -148,7 +148,7 @@ Containers = BoolOption(
     "Include Spawned Container Loot", False,
     display_name="Include Container Gear",
     description=(
-        "Include gear spawned from opened containers. Off by default; may interfere with slot machines."
+        "Include currently attached container gear. Unattached items have no reliable container-origin marker; avoid scripted rewards."
     ),
 )
 SelfDropped = BoolOption(
@@ -227,10 +227,15 @@ class LootRecoveryRuntime:
         if needed and spec not in self.hooks:
             self._add_hook(spec, self.on_tick)
         elif not needed and spec in self.hooks:
-            unrealsdk.hooks.remove_hook(*spec)
-            if unrealsdk.hooks.has_hook(*spec):
+            try:
+                unrealsdk.hooks.remove_hook(*spec)
+            finally:
+                # A removal may raise after unregistering. Reconcile the
+                # ledger with the actual hook state before a later re-enable.
+                if not unrealsdk.hooks.has_hook(*spec):
+                    self.hooks.remove(spec)
+            if spec in self.hooks:
                 raise RuntimeError("recovery tick removal failed")
-            self.hooks.remove(spec)
 
     def _set_state(self, state):
         self._state = state
@@ -257,7 +262,7 @@ class LootRecoveryRuntime:
             error("hook setup failed")
             self.disable()
             raise
-        log("v1.0 Beta.5 enabled; deferred landing gather; NPC handoff protection; host-authoritative")
+        log("v{} enabled; deferred landing gather; NPC handoff protection; host-authoritative".format(__version__))
 
     def disable(self):
         self.enabled = False
@@ -270,8 +275,15 @@ class LootRecoveryRuntime:
                 if unrealsdk.hooks.has_hook(path, phase, hook_id):
                     raise RuntimeError("hook remains registered")
             except Exception:
-                remaining.append((path, phase, hook_id))
                 error("removing hook " + hook_id)
+                # Retain ownership only if the hook could still be installed.
+                # remove_hook may raise after successfully removing its hook.
+                try:
+                    if not unrealsdk.hooks.has_hook(path, phase, hook_id):
+                        continue
+                except Exception:
+                    pass  # Unknown state: preserve the record for a retry.
+                remaining.append((path, phase, hook_id))
         self.hooks[:] = reversed(remaining)
         log("disabled")
 
@@ -401,7 +413,7 @@ class LootRecoveryRuntime:
         return False
 
     def queue_until_landing(self, world, pawn):
-        """Do not place pickups at airborne coordinates / over map voids."""
+        """Defer an airborne gather until the pawn returns to walking, with a deadline."""
         self.landing_deadline = time.monotonic() + LANDING_WAIT_TIMEOUT
         self.landing_world = addr(world)
         self.landing_pawn = unrealsdk.unreal.WeakPointer(pawn)
@@ -490,7 +502,7 @@ class LootRecoveryRuntime:
             world, pawn = safe_world(pc)
             if world is None:
                 return
-            if int(pawn.Physics) != 1:  # Do not scatter loot from a jump or void.
+            if int(pawn.Physics) != 1:  # Defer movement while not walking; placement terrain is unverified.
                 self.queue_until_landing(world, pawn)
                 return
             self._set_state(RecoveryState.IDLE)
@@ -508,8 +520,8 @@ class LootRecoveryRuntime:
                 try:
                     if self.eligible(pickup, world_id, pawn):
                         weak = unrealsdk.unreal.WeakPointer(pickup)
-                        # Ground pickups are tested before attached container loot.
-                        # This makes the first relocation a normal, reversible item.
+                        # Process loose pickups before potentially attached container gear.
+                        # Loose placement is not necessarily safe or reversible.
                         if bool(pickup.bIsPickupAttachedToSomething):
                             attached_pending.append(weak)
                         else:
@@ -662,7 +674,7 @@ class LootRecoveryRuntime:
         return slot_position(context, index, SLOTS_PER_ARC, DISTANCE_FIRST, DISTANCE_STEP)
 
     def find_position(self, pawn, start_index, context=None):
-        """Use the working stock-physics placement path on stable ground."""
+        """Compute a bounded slot relative to a walking pawn; terrain is unverified."""
         try:
             # Keep the established placement guard; on_tick defers when falling.
             if int(pawn.Physics) != 1:  # PHYS_Walking
